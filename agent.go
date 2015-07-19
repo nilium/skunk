@@ -31,12 +31,13 @@ type opGetErr chan<- error
 func (c opGetErr) Exec(a *Agent) { c <- a.err }
 
 type Agent struct {
-	apiURL string
+	// Initialization fields -- these may not change after Start is called. Prior to calling Start, you may tweak
+	// them to your heart's content.
+	Cycle  time.Duration
+	Client *http.Client
 
-	// Initialization fields -- these do not change once set.
+	apiURL string
 	apiKey string
-	cycle  time.Duration
-	client *http.Client
 
 	// Access to the following fields controlled by runloop after init
 	body     *Body
@@ -73,6 +74,9 @@ func NewWithRep(apiKey string, rep AgentRep) (agent *Agent, err error) {
 	}
 
 	return &Agent{
+		Client: http.DefaultClient,
+		Cycle:  MinuteCycle,
+
 		apiKey: apiKey,
 
 		body: &Body{
@@ -92,6 +96,7 @@ func (a *Agent) Start() {
 
 	ops := make(chan Op)
 	a.ops = ops
+
 	go a.run(ops)
 }
 
@@ -126,7 +131,7 @@ func (a *Agent) run(ops <-chan Op) {
 	var timer *time.Timer
 	var retry <-chan time.Time
 
-	a.ticker = time.NewTicker(a.cycle)
+	a.ticker = time.NewTicker(a.Cycle)
 	defer a.ticker.Stop()
 
 	trySend := func(from time.Time) {
@@ -200,7 +205,7 @@ tryGetPayload:
 		req.Header.Set("Content-Encoding", "gzip")
 	}
 
-	resp, err := a.client.Do(req)
+	resp, err := a.Client.Do(req)
 	if resp != nil {
 		defer func() {
 			closeErr := resp.Body.Close()
