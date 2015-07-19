@@ -90,14 +90,14 @@ func (a *Agent) Start() {
 		return
 	}
 
-	ops := make(chan Op)
+	ops := make(chan opFunc)
 	a.ops = ops
 
 	go a.run(ops)
 }
 
 // Close kills the agent's runloop and makes it completely inert. Using the agent afterward will result in a panic. Any
-// error held by the agent is returned.
+// error held by the agent prior to shutdown is returned.
 //
 // When calling Close, you must ensure that the agent is no longer in use and will not be used by any goroutine after
 // Close is called.
