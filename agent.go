@@ -134,12 +134,14 @@ func (a *Agent) Err() (err error) {
 func (a *Agent) run(ops <-chan opFunc) {
 	var timer *time.Timer
 	var retry <-chan time.Time
+	retryNeeded := false
 
 	a.ticker = time.NewTicker(a.Cycle)
 	defer a.ticker.Stop()
 
 	trySend := func(from time.Time) {
 		if err := a.sendRequest(from); err == nil {
+			retryNeeded = false
 			a.lastPoll = from
 			a.clear()
 		} else if iserr(err, errMustRetry) {
@@ -149,6 +151,7 @@ func (a *Agent) run(ops <-chan opFunc) {
 			} else {
 				timer.Reset(time.Minute)
 			}
+			retryNeeded = true
 		}
 	}
 
@@ -157,7 +160,10 @@ func (a *Agent) run(ops <-chan opFunc) {
 		case from := <-retry:
 			trySend(from)
 		case from := <-a.ticker.C:
-			trySend(from)
+			if !retryNeeded {
+				// Let the retry loop take over until things are back to normal.
+				trySend(from)
+			}
 		case op, ok := <-ops:
 			if !ok {
 				return
