@@ -59,7 +59,7 @@ type Component struct {
 // AddMetric adds a single metric to the Component. If the metric already exists by name in the Component, the value is
 // added to the existing metric, otherwise the metric is added as a ScalarMetric.
 func (c *Component) AddMetric(name string, value float64) {
-	c.agent.ops <- func(*Agent) {
+	c.agent.ops <- func(*Agent) error {
 		if m, ok := c.Metrics[name]; ok {
 			c.Metrics[name] = m.Add(value)
 		} else {
@@ -73,6 +73,8 @@ func (c *Component) AddMetric(name string, value float64) {
 		} else {
 			c.Duration.Duration = time.Since(c.start)
 		}
+
+		return nil
 	}
 }
 

@@ -24,11 +24,7 @@ const (
 // default endpoint of new agents. Already-initialized agents do not use this.
 var NewRelicAPI = `https://platform-api.newrelic.com/platform/v1/metrics`
 
-type Op func(*Agent)
-
-type opGetErr chan<- error
-
-func (c opGetErr) Exec(a *Agent) { c <- a.err }
+type opFunc func(*Agent) error
 
 type Agent struct {
 	// Initialization fields -- these may not change after Start is called. Prior to calling Start, you may tweak
@@ -44,7 +40,7 @@ type Agent struct {
 	err      error
 	lastPoll time.Time
 	ticker   *time.Ticker
-	ops      chan<- Op
+	ops      chan<- opFunc
 }
 
 func New(version, apiKey string) (*Agent, error) {
@@ -111,14 +107,22 @@ func (a *Agent) Close() error {
 	return err
 }
 
-// shutdown is an Op that closes an agent's ops channel.
-func shutdown(a *Agent) {
+// shutdown is an opFunc that closes an agent's ops channel.
+func shutdown(a *Agent) error {
 	if err := a.sendRequest(time.Now()); iserr(err, errMustRetry) {
 		log.Println("skunk: received 50x error from NewRelic on shutdown flush - dropping payload on the floor")
 	} else if err != nil {
 		a.err = err
 	}
 	close(a.ops)
+	return mkerr(errShuttingDown, nil)
+}
+
+type opGetErr chan<- error
+
+func (c opGetErr) Exec(a *Agent) error {
+	c <- a.err
+	return nil
 }
 
 func (a *Agent) Err() (err error) {
@@ -127,7 +131,7 @@ func (a *Agent) Err() (err error) {
 	return <-out
 }
 
-func (a *Agent) run(ops <-chan Op) {
+func (a *Agent) run(ops <-chan opFunc) {
 	var timer *time.Timer
 	var retry <-chan time.Time
 
@@ -161,7 +165,12 @@ func (a *Agent) run(ops <-chan Op) {
 				log.Println(ErrNilOpReceived)
 				continue
 			}
-			op(a)
+
+			if err := op(a); iserr(err, errShuttingDown) {
+				return
+			} else if err != nil {
+				a.err = err
+			}
 		}
 	}
 }
@@ -279,12 +288,12 @@ type addComponent struct {
 
 // Exec searches for a component of the name and guid described by ac. If it finds a component in the agent, a, it is
 // sent on ac's out channel. Otherwise, a new component is created, added to the agent, and sent on the out channel.
-func (ac addComponent) Exec(a *Agent) {
+func (ac addComponent) Exec(a *Agent) error {
 	body := a.body
 	for _, c := range body.Components {
 		if c.Name == ac.name && c.GUID == ac.guid {
 			ac.out <- c
-			return
+			return nil
 		}
 	}
 
@@ -295,6 +304,8 @@ func (ac addComponent) Exec(a *Agent) {
 		agent:   a,
 	}
 	body.Components = append(body.Components, c)
+
+	return nil
 }
 
 // clear empties out all metrics held by the agent. This should be called after a payload has been successfully sent to

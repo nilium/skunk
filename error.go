@@ -38,8 +38,9 @@ var errMessages = map[int]string{
 	ErrBodyTooLarge:  "too many components and/or metrics in body",
 	ErrEncodingJSON:  "encountered an error in encoding a JSON payload",
 	// Private
-	errNoMetrics: "nothing to send",
-	errMustRetry: "must retry this request",
+	errNoMetrics:    "nothing to send",
+	errMustRetry:    "must retry this request",
+	errShuttingDown: "agent is shutting down",
 }
 
 func iserr(err error, code int) bool {
@@ -82,4 +83,6 @@ const (
 	// errMustRetry is returned by sendRequest when the response is a 50x error and we should retry the send in a
 	// minute.
 	errMustRetry
+	// errShuttingDown means the agent is shutting down right now. The runloop must exit immediately.
+	errShuttingDown
 )
