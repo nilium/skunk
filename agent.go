@@ -141,6 +141,7 @@ func (a *Agent) run(ops <-chan opFunc) {
 	trySend := func(from time.Time) {
 		if err := a.sendRequest(from); err == nil {
 			a.lastPoll = from
+			a.clear()
 		} else if iserr(err, errMustRetry) {
 			if timer == nil {
 				timer = time.NewTimer(time.Minute)
