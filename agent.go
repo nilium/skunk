@@ -311,6 +311,7 @@ func (ac addComponent) Exec(a *Agent) error {
 		agent:   a,
 	}
 	body.Components = append(body.Components, c)
+	ac.out <- c
 
 	return nil
 }
