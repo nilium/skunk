@@ -153,6 +153,8 @@ func (a *Agent) run(ops <-chan opFunc) {
 				timer.Reset(time.Minute)
 			}
 			retryNeeded = true
+		} else {
+			a.err = err
 		}
 	}
 
