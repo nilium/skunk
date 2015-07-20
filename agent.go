@@ -73,6 +73,7 @@ func NewWithRep(apiKey string, rep AgentRep) (agent *Agent, err error) {
 		Client: http.DefaultClient,
 		Cycle:  MinuteCycle,
 
+		apiURL: NewRelicAPI,
 		apiKey: apiKey,
 
 		body: &Body{
