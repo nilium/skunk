@@ -44,7 +44,7 @@ type Component struct {
 	GUID string `json:"guid"`
 	// Duration is the time elapsed, in seconds, for this snapshot of the component. The duration is rounded to the
 	// nearest second. This is only used when constructing a payload using a copy of a Component.
-	Duration Seconds           `json:"version"`
+	Duration Seconds           `json:"duration"`
 	Metrics  map[string]Metric `json:"metrics"`
 
 	// start is the time that the first metric was recorded. If start.IsZero is true, the time needs to be set to
