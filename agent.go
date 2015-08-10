@@ -224,7 +224,8 @@ func logComponentMetrics(w io.Writer, components []Component) {
 		return
 	}
 
-	tw := tabwriter.NewWriter(w, 1, 8, 1, ' ', tabwriter.TabIndent)
+	var buf bytes.Buffer
+	tw := tabwriter.NewWriter(&buf, 1, 8, 1, ' ', tabwriter.TabIndent)
 
 	for _, com := range components {
 		if len(com.Metrics) == 0 {
@@ -244,6 +245,10 @@ func logComponentMetrics(w io.Writer, components []Component) {
 			}
 		}
 		tw.Flush()
+	}
+
+	if _, err := buf.WriteTo(w); err != nil {
+		fmt.Fprintf(w, "skunk: error writing metrics log entries: %v", err)
 	}
 }
 
