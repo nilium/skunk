@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
+	"text/tabwriter"
 	"time"
 )
 
@@ -29,9 +30,10 @@ type opFunc func(*Agent) error
 type Agent struct {
 	// Initialization fields -- these may not change after Start is called. Prior to calling Start, you may tweak
 	// them to your heart's content.
-	Cycle  time.Duration
-	Client *http.Client
-	Log    io.Writer
+	Cycle      time.Duration
+	Client     *http.Client
+	Log        io.Writer
+	LogMetrics bool
 
 	apiURL string
 	apiKey string
@@ -71,9 +73,10 @@ func NewWithRep(apiKey string, rep AgentRep) (agent *Agent, err error) {
 	}
 
 	return &Agent{
-		Client: http.DefaultClient,
-		Cycle:  MinuteCycle,
-		Log:    ioutil.Discard,
+		Client:     http.DefaultClient,
+		Cycle:      MinuteCycle,
+		Log:        ioutil.Discard,
+		LogMetrics: false,
 
 		apiURL: NewRelicAPI,
 		apiKey: apiKey,
@@ -169,6 +172,10 @@ func (a *Agent) run(ops <-chan opFunc) {
 		case from := <-retry:
 			trySend(from)
 		case from := <-a.ticker.C:
+			if a.LogMetrics {
+				a.logMetrics()
+			}
+
 			if !retryNeeded {
 				// Let the retry loop take over until things are back to normal.
 				trySend(from)
@@ -188,6 +195,55 @@ func (a *Agent) run(ops <-chan opFunc) {
 				a.err = err
 			}
 		}
+	}
+}
+
+func (a *Agent) logMetrics() {
+	if a.Log == ioutil.Discard {
+		return
+	}
+
+	components := make([]Component, len(a.body.Components))
+	i := 0
+	for _, c := range a.body.Components {
+		if len(c.Metrics) > 0 {
+			components[i] = *c
+			i++
+		}
+	}
+
+	if i == 0 {
+		return
+	}
+
+	go logComponentMetrics(a.Log, components[:i])
+}
+
+func logComponentMetrics(w io.Writer, components []Component) {
+	if len(components) == 0 {
+		return
+	}
+
+	tw := tabwriter.NewWriter(w, 1, 8, 1, ' ', tabwriter.TabIndent)
+
+	for _, com := range components {
+		if len(com.Metrics) == 0 {
+			continue
+		}
+
+		fmt.Fprintf(tw, "%s (%s) %v\n\tName\tCount\tTotal\tAverage\tMin\tMax\tSS\n", com.Name, com.GUID, com.Duration.Duration)
+		for key, m := range com.Metrics {
+			switch m := m.(type) {
+			case RangeMetric:
+				fmt.Fprintf(tw, "\t%s\t%v\t%v\t%v\t%v\t%v\t%v\n",
+					key, m.Count, m.Total, m.Total/float64(m.Count), m.Min, m.Max, m.Square-((m.Total*m.Total)/float64(m.Count)))
+			case ScalarMetric:
+				f := float64(m)
+				fmt.Fprintf(tw, "\t%s\t1\t%v\t%v\t%v\t%v\t0\n",
+					key, f, f, f, f)
+			}
+		}
+		tw.Flush()
 	}
 }
 
