@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"io/ioutil"
 	"net/http"
 	"os"
 	"time"
@@ -31,6 +31,7 @@ type Agent struct {
 	// them to your heart's content.
 	Cycle  time.Duration
 	Client *http.Client
+	Log    io.Writer
 
 	apiURL string
 	apiKey string
@@ -72,6 +73,7 @@ func NewWithRep(apiKey string, rep AgentRep) (agent *Agent, err error) {
 	return &Agent{
 		Client: http.DefaultClient,
 		Cycle:  MinuteCycle,
+		Log:    ioutil.Discard,
 
 		apiURL: NewRelicAPI,
 		apiKey: apiKey,
@@ -89,6 +91,10 @@ func NewWithRep(apiKey string, rep AgentRep) (agent *Agent, err error) {
 func (a *Agent) Start() {
 	if a.ops != nil {
 		return
+	}
+
+	if a.Log == nil {
+		a.Log = ioutil.Discard
 	}
 
 	ops := make(chan opFunc)
@@ -111,7 +117,7 @@ func (a *Agent) Close() error {
 // shutdown is an opFunc that closes an agent's ops channel.
 func shutdown(a *Agent) error {
 	if err := a.sendRequest(time.Now()); iserr(err, errMustRetry) {
-		log.Println("skunk: received 50x error from NewRelic on shutdown flush - dropping payload on the floor")
+		fmt.Fprintln(a.Log, "skunk: received 50x error from NewRelic on shutdown flush - dropping payload on the floor")
 	} else if err != nil {
 		a.err = err
 	}
@@ -172,7 +178,7 @@ func (a *Agent) run(ops <-chan opFunc) {
 				return
 			} else if op == nil {
 				// This should be impossible. If it happens, log it and skip the op.
-				log.Println(ErrNilOpReceived)
+				fmt.Fprintln(a.Log, ErrNilOpReceived)
 				continue
 			}
 
@@ -229,7 +235,7 @@ tryGetPayload:
 		defer func() {
 			closeErr := resp.Body.Close()
 			if closeErr != nil {
-				log.Printf("skunk: error closing response body: %v", closeErr)
+				fmt.Fprintf(a.Log, "skunk: error closing response body: %v", closeErr)
 			}
 		}()
 	}
@@ -247,7 +253,7 @@ tryGetPayload:
 	}
 	decoder := json.NewDecoder(resp.Body)
 	if err = decoder.Decode(nrErr); err == nil && len(nrErr.Error) > 0 {
-		log.Printf("skunk: received NewRelic error: %s", nrErr.Error)
+		fmt.Fprintf(a.Log, "skunk: received NewRelic error: %s", nrErr.Error)
 	}
 
 	return statusError(resp)
