@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
+	"sort"
 	"text/tabwriter"
 	"time"
 )
@@ -227,13 +228,21 @@ func logComponentMetrics(w io.Writer, components []Component) {
 	var buf bytes.Buffer
 	tw := tabwriter.NewWriter(&buf, 1, 8, 1, ' ', tabwriter.TabIndent)
 
+	var keys []string
 	for _, com := range components {
 		if len(com.Metrics) == 0 {
 			continue
 		}
 
+		// Sort keys so the output is easier to sift through.
+		for key := range com.Metrics {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+
 		fmt.Fprintf(tw, "%s (%s) %v\n\tName\tCount\tTotal\tAverage\tMin\tMax\tSS\n", com.Name, com.GUID, com.Duration.Duration)
-		for key, m := range com.Metrics {
+		for _, key := range keys {
+			m := com.Metrics[key]
 			switch m := m.(type) {
 			case RangeMetric:
 				fmt.Fprintf(tw, "\t%s\t%v\t%v\t%v\t%v\t%v\t%v\n",
@@ -245,6 +254,8 @@ func logComponentMetrics(w io.Writer, components []Component) {
 			}
 		}
 		tw.Flush()
+
+		keys = keys[0:0]
 	}
 
 	if _, err := buf.WriteTo(w); err != nil {
