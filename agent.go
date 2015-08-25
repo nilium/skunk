@@ -259,7 +259,7 @@ func logComponentMetrics(w io.Writer, components []Component) {
 	}
 
 	if _, err := buf.WriteTo(w); err != nil {
-		fmt.Fprintf(w, "skunk: error writing metrics log entries: %v", err)
+		fmt.Fprintf(w, "skunk: error writing metrics log entries: %v\n", err)
 	}
 }
 
@@ -307,7 +307,7 @@ tryGetPayload:
 		defer func() {
 			closeErr := resp.Body.Close()
 			if closeErr != nil {
-				fmt.Fprintf(a.Log, "skunk: error closing response body: %v", closeErr)
+				fmt.Fprintf(a.Log, "skunk: error closing response body: %v\n", closeErr)
 			}
 		}()
 	}
@@ -325,7 +325,10 @@ tryGetPayload:
 	}
 	decoder := json.NewDecoder(resp.Body)
 	if err = decoder.Decode(nrErr); err == nil && len(nrErr.Error) > 0 {
-		fmt.Fprintf(a.Log, "skunk: received NewRelic error: %s", nrErr.Error)
+		fmt.Fprintf(a.Log, "skunk: received NewRelic error: %s\n", nrErr.Error)
+	}
+	if _, err := io.Copy(ioutil.Discard, resp.Body); err != nil {
+		fmt.Fprintf(a.Log, "skunk: error discarding body remainder: %v\n", err)
 	}
 
 	return statusError(resp)
