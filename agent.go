@@ -123,6 +123,7 @@ func shutdown(a *Agent) error {
 	if err := a.sendRequest(time.Now()); iserr(err, errMustRetry) {
 		fmt.Fprintln(a.Log, "skunk: received 50x error from NewRelic on shutdown flush - dropping payload on the floor")
 	} else if err != nil {
+		fmt.Fprintln(a.Log, "skunk: received error on sending to NewRelic:", err)
 		a.err = err
 	}
 	close(a.ops)
