@@ -59,11 +59,17 @@ type Component struct {
 // AddMetric adds a single metric to the Component. If the metric already exists by name in the Component, the value is
 // added to the existing metric, otherwise the metric is added as a ScalarMetric.
 func (c *Component) AddMetric(name string, value float64) {
+	c.MergeMetric(name, ScalarMetric(value))
+}
+
+// AddMetric adds a single metric to the Component. If the metric already exists by name in the Component, the value is
+// added to the existing metric, otherwise the metric is added as a ScalarMetric.
+func (c *Component) MergeMetric(name string, value Metric) {
 	c.agent.ops <- func(*Agent) error {
 		if m, ok := c.Metrics[name]; ok {
-			c.Metrics[name] = m.Add(value)
+			c.Metrics[name] = m.Merge(value)
 		} else {
-			c.Metrics[name] = ScalarMetric(value)
+			c.Metrics[name] = value
 		}
 
 		// Set the time over which the metric was gathered.
@@ -83,8 +89,11 @@ func (c *Component) AddMetric(name string, value float64) {
 //
 // The Add method of a Metric is used to get the result of adding an additional value to a metric. Metrics themselves
 // should be considered immutable, so the result must be a new Metric.
+//
+// This shouldn't be implemented by other libraries.
 type Metric interface {
 	Add(value float64) Metric
+	Merge(Metric) Metric
 }
 
 // ScalarMetric is any singular metric that does not cover a range a values. Adding to a ScalarMetric produces
@@ -100,6 +109,11 @@ func (s ScalarMetric) Add(value float64) Metric {
 		Max:    math.Max(value, f),
 		Square: math.Pow(f, 2) + math.Pow(value, 2),
 	}
+}
+
+func (s ScalarMetric) Merge(value Metric) Metric {
+	f := float64(s)
+	return value.Merge(RangeMetric{Total: f, Count: 1, Min: f, Max: f, Square: math.Pow(f, 2)})
 }
 
 func (s ScalarMetric) MarshalJSON() ([]byte, error) {
@@ -125,4 +139,26 @@ func (r RangeMetric) Add(value float64) Metric {
 		Max:    math.Max(value, r.Max),
 		Square: r.Square + math.Pow(value, 2),
 	}
+}
+
+func (r RangeMetric) Merge(value Metric) Metric {
+	switch o := value.(type) {
+	case ScalarMetric:
+		f := float64(o)
+		r.Total += f
+		r.Count++
+		r.Min = math.Min(r.Min, f)
+		r.Max = math.Max(r.Max, f)
+		r.Square += math.Pow(f, 2)
+	case RangeMetric:
+		r.Total += o.Total
+		r.Count += o.Count
+		r.Min = math.Min(r.Min, o.Min)
+		r.Max = math.Max(r.Max, o.Max)
+		r.Square += o.Square
+	default:
+		// Defer to the other metric to attempt the merge.
+		return value.Merge(r)
+	}
+	return r
 }
