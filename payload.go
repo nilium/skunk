@@ -7,6 +7,32 @@ import (
 	"time"
 )
 
+// Metrics is a map of NewRelic metric names to values. It provides a couple convenience methods for building up merge-able metrics.
+type Metrics map[string]Metric
+
+// AddFloat adds a single float metric (as a ScalarMetric) to the Metrics map.
+func (m Metrics) AddFloat(name string, val float64) {
+	m.AddMetric(name, ScalarMetric(val))
+}
+
+// AddMetric merges a Metric into the Metrics map. Merges always happen by merging the existing value into the new metric, rather
+// than vice versa, to give externally-defined Metrics an opportunity to perform the merge (since otherwise a RangeMetric, for example,
+// will just call this anyway).
+func (m Metrics) AddMetric(name string, val Metric) {
+	if met, ok := m[name]; ok {
+		m[name] = val.Merge(met)
+	} else {
+		m[name] = val
+	}
+}
+
+// MergeMetrics merges all Metrics in the given map into m.
+func (m Metrics) MergeMetrics(metrics Metrics) {
+	for k, v := range metrics {
+		m.AddMetric(k, v)
+	}
+}
+
 // Body represents the POSTed body of a NewRelic plugin's metrics data.
 type Body struct {
 	Agent      AgentRep     `json:"agent"`
@@ -44,8 +70,8 @@ type Component struct {
 	GUID string `json:"guid"`
 	// Duration is the time elapsed, in seconds, for this snapshot of the component. The duration is rounded to the
 	// nearest second. This is only used when constructing a payload using a copy of a Component.
-	Duration Seconds           `json:"duration"`
-	Metrics  map[string]Metric `json:"metrics"`
+	Duration Seconds `json:"duration"`
+	Metrics  Metrics `json:"metrics"`
 
 	// start is the time that the first metric was recorded. If start.IsZero is true, the time needs to be set to
 	// the current time once a metric is added. The start time is cleared upon an agent successfully sending
@@ -62,24 +88,33 @@ func (c *Component) AddMetric(name string, value float64) {
 	c.MergeMetric(name, ScalarMetric(value))
 }
 
+// updateTiming updates the component's timing to the current time.
+func (c *Component) updateTiming() {
+	// Set the time over which the metric was gathered.
+	if c.start.IsZero() {
+		c.start = time.Now()
+		c.Duration = Seconds{0}
+	} else {
+		c.Duration.Duration = time.Since(c.start)
+	}
+}
+
 // AddMetric adds a single metric to the Component. If the metric already exists by name in the Component, the value is
 // added to the existing metric, otherwise the metric is added as a ScalarMetric.
 func (c *Component) MergeMetric(name string, value Metric) {
 	c.agent.ops <- func(*Agent) error {
-		if m, ok := c.Metrics[name]; ok {
-			c.Metrics[name] = m.Merge(value)
-		} else {
-			c.Metrics[name] = value
-		}
+		c.Metrics.AddMetric(name, value)
+		c.updateTiming()
+		return nil
+	}
+}
 
-		// Set the time over which the metric was gathered.
-		if c.start.IsZero() {
-			c.start = time.Now()
-			c.Duration = Seconds{0}
-		} else {
-			c.Duration.Duration = time.Since(c.start)
-		}
-
+// MergeMetrics merges a Metrics set into the component's metrics. This can be used to do batch updates of metrics if
+// you're sending lots of metrics out and the agent is blocking goroutines due to high-frequency parallel updates.
+func (c *Component) MergeMetrics(metrics Metrics) {
+	c.agent.ops <- func(*Agent) error {
+		c.Metrics.MergeMetrics(metrics)
+		c.updateTiming()
 		return nil
 	}
 }
