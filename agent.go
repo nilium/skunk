@@ -252,6 +252,10 @@ func logComponentMetrics(w io.Writer, components []Component) {
 				f := float64(m)
 				fmt.Fprintf(tw, "\t%s\t1\t%v\t%v\t%v\t%v\t0\n",
 					key, f, f, f, f)
+			default:
+				// Unknown type (at least emit something for now) -- will likely need to add accessor
+				// methods to the Metric interface later to handle these cases.
+				fmt.Fprintf(tw, "\t%s\tNA\tNA\tNA\tNA\tNA\tNA\n")
 			}
 		}
 		tw.Flush()
